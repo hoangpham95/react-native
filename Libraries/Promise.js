@@ -1,42 +1,50 @@
 /**
- * Copyright (c) 2016-present, Facebook, Inc.
- * All rights reserved.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  *
- * @providesModule Promise
- * @flow
+ * @format
+ * @flow strict
  */
+
 'use strict';
 
-const Promise = require('fbjs/lib/Promise.native');
+const Promise = require('promise/setimmediate/es6-extensions');
 
-const prettyFormat = require('pretty-format');
+require('promise/setimmediate/done');
+require('promise/setimmediate/finally');
 
 if (__DEV__) {
   require('promise/setimmediate/rejection-tracking').enable({
     allRejections: true,
-    onUnhandled: (id, error = {}) => {
+    onUnhandled: (id, rejection = {}) => {
       let message: string;
       let stack: ?string;
 
-      const stringValue = Object.prototype.toString.call(error);
+      const stringValue = Object.prototype.toString.call(rejection);
       if (stringValue === '[object Error]') {
-        message = Error.prototype.toString.call(error);
+        message = Error.prototype.toString.call(rejection);
+        const error: Error = (rejection: $FlowFixMe);
         stack = error.stack;
       } else {
-        message = prettyFormat(error);
+        try {
+          message = require('pretty-format')(rejection);
+        } catch {
+          message =
+            typeof rejection === 'string'
+              ? rejection
+              : JSON.stringify((rejection: $FlowFixMe));
+        }
       }
 
       const warning =
         `Possible Unhandled Promise Rejection (id: ${id}):\n` +
-        `${message}\n` +
+        `${message ?? ''}\n` +
         (stack == null ? '' : stack);
       console.warn(warning);
     },
-    onHandled: (id) => {
+    onHandled: id => {
       const warning =
         `Promise Rejection Handled (id: ${id})\n` +
         'This means you can ignore any previous messages of the form ' +

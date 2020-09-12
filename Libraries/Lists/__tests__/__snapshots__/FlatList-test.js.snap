@@ -3,6 +3,7 @@
 exports[`FlatList renders all the bells and whistles 1`] = `
 <RCTScrollView
   ItemSeparatorComponent={[Function]}
+  ListEmptyComponent={[Function]}
   ListFooterComponent={[Function]}
   ListHeaderComponent={[Function]}
   data={
@@ -32,28 +33,27 @@ exports[`FlatList renders all the bells and whistles 1`] = `
   initialNumToRender={10}
   keyExtractor={[Function]}
   maxToRenderPerBatch={10}
-  numColumns={2}
   onContentSizeChange={[Function]}
-  onEndReached={[Function]}
   onEndReachedThreshold={2}
   onLayout={[Function]}
-  onRefresh={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onRefresh={[MockFunction]}
   onScroll={[Function]}
   onScrollBeginDrag={[Function]}
-  onViewableItemsChanged={undefined}
+  onScrollEndDrag={[Function]}
   refreshControl={
     <RefreshControlMock
-      onRefresh={[Function]}
+      onRefresh={[MockFunction]}
       refreshing={false}
     />
   }
   refreshing={false}
-  removeClippedSubviews={true}
+  removeClippedSubviews={false}
   renderItem={[Function]}
-  renderScrollComponent={[Function]}
   scrollEventThrottle={50}
   stickyHeaderIndices={Array []}
   updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
   windowSize={21}
 >
   <RCTRefreshControl />
@@ -64,54 +64,57 @@ exports[`FlatList renders all the bells and whistles 1`] = `
       <header />
     </View>
     <View
-      style={
-        Array [
+      style={null}
+    >
+      <View
+        style={
           Object {
             "flexDirection": "row",
-          },
-          undefined,
-        ]
-      }
-    >
-      <item
-        value="0"
-      />
-      <item
-        value="1"
-      />
+          }
+        }
+      >
+        <item
+          value="0"
+        />
+        <item
+          value="1"
+        />
+      </View>
+      <separator />
     </View>
-    <separator />
     <View
-      style={
-        Array [
+      style={null}
+    >
+      <View
+        style={
           Object {
             "flexDirection": "row",
-          },
-          undefined,
-        ]
-      }
-    >
-      <item
-        value="2"
-      />
-      <item
-        value="3"
-      />
+          }
+        }
+      >
+        <item
+          value="2"
+        />
+        <item
+          value="3"
+        />
+      </View>
+      <separator />
     </View>
-    <separator />
     <View
-      style={
-        Array [
+      style={null}
+    >
+      <View
+        style={
           Object {
             "flexDirection": "row",
-          },
-          undefined,
-        ]
-      }
-    >
-      <item
-        value="4"
-      />
+          }
+        }
+      >
+        <item
+          value="4"
+        />
+      </View>
     </View>
     <View
       onLayout={[Function]}
@@ -132,20 +135,19 @@ exports[`FlatList renders empty list 1`] = `
   initialNumToRender={10}
   keyExtractor={[Function]}
   maxToRenderPerBatch={10}
-  numColumns={1}
   onContentSizeChange={[Function]}
-  onEndReached={[Function]}
   onEndReachedThreshold={2}
   onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
   onScroll={[Function]}
   onScrollBeginDrag={[Function]}
-  onViewableItemsChanged={undefined}
-  removeClippedSubviews={true}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
   renderItem={[Function]}
-  renderScrollComponent={[Function]}
   scrollEventThrottle={50}
   stickyHeaderIndices={Array []}
   updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
   windowSize={21}
 >
   <View />
@@ -154,7 +156,6 @@ exports[`FlatList renders empty list 1`] = `
 
 exports[`FlatList renders null list 1`] = `
 <RCTScrollView
-  data={undefined}
   disableVirtualization={false}
   getItem={[Function]}
   getItemCount={[Function]}
@@ -162,23 +163,99 @@ exports[`FlatList renders null list 1`] = `
   initialNumToRender={10}
   keyExtractor={[Function]}
   maxToRenderPerBatch={10}
-  numColumns={1}
   onContentSizeChange={[Function]}
-  onEndReached={[Function]}
   onEndReachedThreshold={2}
   onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
   onScroll={[Function]}
   onScrollBeginDrag={[Function]}
-  onViewableItemsChanged={undefined}
-  removeClippedSubviews={true}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
   renderItem={[Function]}
-  renderScrollComponent={[Function]}
   scrollEventThrottle={50}
   stickyHeaderIndices={Array []}
   updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
   windowSize={21}
 >
   <View />
+</RCTScrollView>
+`;
+
+exports[`FlatList renders simple list (multiple columns) 1`] = `
+<RCTScrollView
+  data={
+    Array [
+      Object {
+        "key": "i1",
+      },
+      Object {
+        "key": "i2",
+      },
+      Object {
+        "key": "i3",
+      },
+    ]
+  }
+  disableVirtualization={false}
+  getItem={[Function]}
+  getItemCount={[Function]}
+  horizontal={false}
+  initialNumToRender={10}
+  keyExtractor={[Function]}
+  maxToRenderPerBatch={10}
+  onContentSizeChange={[Function]}
+  onEndReachedThreshold={2}
+  onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onScroll={[Function]}
+  onScrollBeginDrag={[Function]}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
+  renderItem={[Function]}
+  scrollEventThrottle={50}
+  stickyHeaderIndices={Array []}
+  updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
+  windowSize={21}
+>
+  <View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <View
+        style={
+          Object {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <item
+          value="i1"
+        />
+        <item
+          value="i2"
+        />
+      </View>
+    </View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <View
+        style={
+          Object {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <item
+          value="i3"
+        />
+      </View>
+    </View>
+  </View>
 </RCTScrollView>
 `;
 
@@ -204,25 +281,25 @@ exports[`FlatList renders simple list 1`] = `
   initialNumToRender={10}
   keyExtractor={[Function]}
   maxToRenderPerBatch={10}
-  numColumns={1}
   onContentSizeChange={[Function]}
-  onEndReached={[Function]}
   onEndReachedThreshold={2}
   onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
   onScroll={[Function]}
   onScrollBeginDrag={[Function]}
-  onViewableItemsChanged={undefined}
-  removeClippedSubviews={true}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
   renderItem={[Function]}
-  renderScrollComponent={[Function]}
   scrollEventThrottle={50}
   stickyHeaderIndices={Array []}
   updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
   windowSize={21}
 >
   <View>
     <View
       onLayout={[Function]}
+      style={null}
     >
       <item
         value="i1"
@@ -230,6 +307,7 @@ exports[`FlatList renders simple list 1`] = `
     </View>
     <View
       onLayout={[Function]}
+      style={null}
     >
       <item
         value="i2"
@@ -237,6 +315,150 @@ exports[`FlatList renders simple list 1`] = `
     </View>
     <View
       onLayout={[Function]}
+      style={null}
+    >
+      <item
+        value="i3"
+      />
+    </View>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`FlatList renders simple list using ListItemComponent (multiple columns) 1`] = `
+<RCTScrollView
+  ListItemComponent={[Function]}
+  data={
+    Array [
+      Object {
+        "key": "i1",
+      },
+      Object {
+        "key": "i2",
+      },
+      Object {
+        "key": "i3",
+      },
+    ]
+  }
+  disableVirtualization={false}
+  getItem={[Function]}
+  getItemCount={[Function]}
+  horizontal={false}
+  initialNumToRender={10}
+  keyExtractor={[Function]}
+  maxToRenderPerBatch={10}
+  onContentSizeChange={[Function]}
+  onEndReachedThreshold={2}
+  onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onScroll={[Function]}
+  onScrollBeginDrag={[Function]}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
+  scrollEventThrottle={50}
+  stickyHeaderIndices={Array []}
+  updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
+  windowSize={21}
+>
+  <View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <View
+        style={
+          Object {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <item
+          value="i1"
+        />
+        <item
+          value="i2"
+        />
+      </View>
+    </View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <View
+        style={
+          Object {
+            "flexDirection": "row",
+          }
+        }
+      >
+        <item
+          value="i3"
+        />
+      </View>
+    </View>
+  </View>
+</RCTScrollView>
+`;
+
+exports[`FlatList renders simple list using ListItemComponent 1`] = `
+<RCTScrollView
+  ListItemComponent={[Function]}
+  data={
+    Array [
+      Object {
+        "key": "i1",
+      },
+      Object {
+        "key": "i2",
+      },
+      Object {
+        "key": "i3",
+      },
+    ]
+  }
+  disableVirtualization={false}
+  getItem={[Function]}
+  getItemCount={[Function]}
+  horizontal={false}
+  initialNumToRender={10}
+  keyExtractor={[Function]}
+  maxToRenderPerBatch={10}
+  onContentSizeChange={[Function]}
+  onEndReachedThreshold={2}
+  onLayout={[Function]}
+  onMomentumScrollEnd={[Function]}
+  onScroll={[Function]}
+  onScrollBeginDrag={[Function]}
+  onScrollEndDrag={[Function]}
+  removeClippedSubviews={false}
+  scrollEventThrottle={50}
+  stickyHeaderIndices={Array []}
+  updateCellsBatchingPeriod={50}
+  viewabilityConfigCallbackPairs={Array []}
+  windowSize={21}
+>
+  <View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <item
+        value="i1"
+      />
+    </View>
+    <View
+      onLayout={[Function]}
+      style={null}
+    >
+      <item
+        value="i2"
+      />
+    </View>
+    <View
+      onLayout={[Function]}
+      style={null}
     >
       <item
         value="i3"

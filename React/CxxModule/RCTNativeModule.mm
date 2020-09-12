@@ -1,10 +1,8 @@
-/**
- * Copyright (c) 2015-present, Facebook, Inc.
- * All rights reserved.
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  */
 
 #import "RCTNativeModule.h"
@@ -14,115 +12,210 @@
 #import <React/RCTBridgeModule.h>
 #import <React/RCTCxxUtils.h>
 #import <React/RCTFollyConvert.h>
+#import <React/RCTLog.h>
 #import <React/RCTProfile.h>
 #import <React/RCTUtils.h>
+#import <reactperflogger/BridgeNativeModulePerfLogger.h>
+
+#ifdef WITH_FBSYSTRACE
+#include <fbsystrace.h>
+#endif
+
+namespace {
+enum SchedulingContext { Sync, Async };
+}
 
 namespace facebook {
 namespace react {
 
-RCTNativeModule::RCTNativeModule(RCTBridge *bridge, RCTModuleData *moduleData)
-    : m_bridge(bridge)
-    , m_moduleData(moduleData) {}
+static MethodCallResult invokeInner(
+    RCTBridge *bridge,
+    RCTModuleData *moduleData,
+    unsigned int methodId,
+    const folly::dynamic &params,
+    int callId,
+    SchedulingContext context);
 
-std::string RCTNativeModule::getName() {
+RCTNativeModule::RCTNativeModule(RCTBridge *bridge, RCTModuleData *moduleData)
+    : m_bridge(bridge), m_moduleData(moduleData)
+{
+}
+
+std::string RCTNativeModule::getName()
+{
   return [m_moduleData.name UTF8String];
 }
 
-std::vector<MethodDescriptor> RCTNativeModule::getMethods() {
+std::string RCTNativeModule::getSyncMethodName(unsigned int methodId)
+{
+  return m_moduleData.methods[methodId].JSMethodName;
+}
+
+std::vector<MethodDescriptor> RCTNativeModule::getMethods()
+{
   std::vector<MethodDescriptor> descs;
 
   for (id<RCTBridgeMethod> method in m_moduleData.methods) {
-    descs.emplace_back(
-      method.JSMethodName.UTF8String,
-      method.functionType == RCTFunctionTypePromise ? "promise" : "async"
-    );
+    descs.emplace_back(method.JSMethodName, RCTFunctionDescriptorFromType(method.functionType));
   }
 
   return descs;
 }
 
-folly::dynamic RCTNativeModule::getConstants() {
-  // TODO mhorowitz #10487027: This does unnecessary work since it
-  // only needs constants.  Think about refactoring RCTModuleData or
-  // NativeModule to make this more natural.
-
-  RCT_PROFILE_BEGIN_EVENT(RCTProfileTagAlways,
-                          @"[RCTNativeModule getConstants] moduleData.config", nil);
-  NSArray *config = m_moduleData.config;
-  RCT_PROFILE_END_EVENT(RCTProfileTagAlways, @"");
-  if (!config || config == (id)kCFNull) {
-    return nullptr;
-  }
-  id constants = config[1];
-  if (![constants isKindOfClass:[NSDictionary class]]) {
-      return nullptr;
-  }
-  RCT_PROFILE_BEGIN_EVENT(RCTProfileTagAlways,
-                          @"[RCTNativeModule getConstants] convert", nil);
-  folly::dynamic ret = [RCTConvert folly_dynamic:constants];
+folly::dynamic RCTNativeModule::getConstants()
+{
+  RCT_PROFILE_BEGIN_EVENT(RCTProfileTagAlways, @"[RCTNativeModule getConstants] moduleData.exportedConstants", nil);
+  NSDictionary *constants = m_moduleData.exportedConstants;
+  folly::dynamic ret = convertIdToFollyDynamic(constants);
   RCT_PROFILE_END_EVENT(RCTProfileTagAlways, @"");
   return ret;
 }
 
-bool RCTNativeModule::supportsWebWorkers() {
-  return false;
-}
+void RCTNativeModule::invoke(unsigned int methodId, folly::dynamic &&params, int callId)
+{
+  const char *moduleName = [m_moduleData.name UTF8String];
+  const char *methodName = m_moduleData.methods[methodId].JSMethodName;
 
-void RCTNativeModule::invoke(ExecutorToken token, unsigned int methodId, folly::dynamic &&params) {
+  dispatch_queue_t queue = m_moduleData.methodQueue;
+  const bool isSyncModule = queue == RCTJSThread;
+
+  if (isSyncModule) {
+    BridgeNativeModulePerfLogger::syncMethodCallStart(moduleName, methodName);
+    BridgeNativeModulePerfLogger::syncMethodCallArgConversionStart(moduleName, methodName);
+  } else {
+    BridgeNativeModulePerfLogger::asyncMethodCallStart(moduleName, methodName);
+  }
+
+  // capture by weak pointer so that we can safely use these variables in a callback
+  __weak RCTBridge *weakBridge = m_bridge;
+  __weak RCTModuleData *weakModuleData = m_moduleData;
   // The BatchedBridge version of this buckets all the callbacks by thread, and
   // queues one block on each.  This is much simpler; we'll see how it goes and
   // iterate.
-
-  // There is no flow event handling here until I can understand it.
-
-  auto sparams = std::make_shared<folly::dynamic>(std::move(params));
-
-  __weak RCTBridge *bridge = m_bridge;
-
-  dispatch_block_t block = ^{
-    if (!bridge || !bridge.valid) {
-      return;
+  dispatch_block_t block = [weakBridge, weakModuleData, methodId, params = std::move(params), callId, isSyncModule] {
+#ifdef WITH_FBSYSTRACE
+    if (callId != -1) {
+      fbsystrace_end_async_flow(TRACE_TAG_REACT_APPS, "native", callId);
     }
-
-    id<RCTBridgeMethod> method = m_moduleData.methods[methodId];
-    if (RCT_DEBUG && !method) {
-      RCTLogError(@"Unknown methodID: %ud for module: %@",
-                  methodId, m_moduleData.name);
-    }
-
-    NSArray *objcParams = convertFollyDynamicToId(*sparams);
-
-    @try {
-      [method invokeWithBridge:bridge module:m_moduleData.instance arguments:objcParams];
-    }
-    @catch (NSException *exception) {
-      // Pass on JS exceptions
-      if ([exception.name hasPrefix:RCTFatalExceptionName]) {
-        @throw exception;
-      }
-
-      NSString *message = [NSString stringWithFormat:
-                           @"Exception '%@' was thrown while invoking %@ on target %@ with params %@",
-                           exception, method.JSMethodName, m_moduleData.name, objcParams];
-      RCTFatal(RCTErrorWithMessage(message));
-    }
+#else
+    (void)(callId);
+#endif
+    invokeInner(weakBridge, weakModuleData, methodId, std::move(params), callId, isSyncModule ? Sync : Async);
   };
 
-  dispatch_queue_t queue = m_moduleData.methodQueue;
-
-  if (queue == RCTJSThread) {
+  if (isSyncModule) {
     block();
+    BridgeNativeModulePerfLogger::syncMethodCallReturnConversionEnd(moduleName, methodName);
   } else if (queue) {
+    BridgeNativeModulePerfLogger::asyncMethodCallDispatch(moduleName, methodName);
     dispatch_async(queue, block);
+  }
+
+#ifdef RCT_DEV
+  if (!queue) {
+    RCTLog(
+        @"Attempted to invoke `%u` (method ID) on `%@` (NativeModule name) without a method queue.",
+        methodId,
+        m_moduleData.name);
+  }
+#endif
+
+  if (isSyncModule) {
+    BridgeNativeModulePerfLogger::syncMethodCallEnd(moduleName, methodName);
+  } else {
+    BridgeNativeModulePerfLogger::asyncMethodCallEnd(moduleName, methodName);
   }
 }
 
-MethodCallResult RCTNativeModule::callSerializableNativeHook(
-    ExecutorToken token, unsigned int reactMethodId, folly::dynamic &&params) {
-  RCTFatal(RCTErrorWithMessage(@"callSerializableNativeHook is not yet supported on iOS"));
-  return folly::none;
+MethodCallResult RCTNativeModule::callSerializableNativeHook(unsigned int reactMethodId, folly::dynamic &&params)
+{
+  return invokeInner(m_bridge, m_moduleData, reactMethodId, params, 0, Sync);
 }
 
+static MethodCallResult invokeInner(
+    RCTBridge *bridge,
+    RCTModuleData *moduleData,
+    unsigned int methodId,
+    const folly::dynamic &params,
+    int callId,
+    SchedulingContext context)
+{
+  if (!bridge || !bridge.valid || !moduleData) {
+    if (context == Sync) {
+      /**
+       * NOTE: moduleName and methodName are "". This shouldn't be an issue because there can only be one ongoing sync
+       * call at a time, and when we call syncMethodCallFail, that one call should terminate. This is also an
+       * exceptional scenario, so it shouldn't occur often.
+       */
+      BridgeNativeModulePerfLogger::syncMethodCallFail("N/A", "N/A");
+    }
+    return folly::none;
+  }
+
+  id<RCTBridgeMethod> method = moduleData.methods[methodId];
+  if (RCT_DEBUG && !method) {
+    RCTLogError(@"Unknown methodID: %ud for module: %@", methodId, moduleData.name);
+  }
+
+  const char *moduleName = [moduleData.name UTF8String];
+  const char *methodName = moduleData.methods[methodId].JSMethodName;
+
+  if (context == Async) {
+    BridgeNativeModulePerfLogger::asyncMethodCallExecutionStart(moduleName, methodName, (int32_t)callId);
+    BridgeNativeModulePerfLogger::asyncMethodCallExecutionArgConversionStart(moduleName, methodName, (int32_t)callId);
+  }
+
+  NSArray *objcParams = convertFollyDynamicToId(params);
+
+  if (context == Sync) {
+    BridgeNativeModulePerfLogger::syncMethodCallArgConversionEnd(moduleName, methodName);
+  }
+
+  @try {
+    if (context == Sync) {
+      BridgeNativeModulePerfLogger::syncMethodCallExecutionStart(moduleName, methodName);
+    } else {
+      BridgeNativeModulePerfLogger::asyncMethodCallExecutionArgConversionEnd(moduleName, methodName, (int32_t)callId);
+    }
+
+    id result = [method invokeWithBridge:bridge module:moduleData.instance arguments:objcParams];
+
+    if (context == Sync) {
+      BridgeNativeModulePerfLogger::syncMethodCallExecutionEnd(moduleName, methodName);
+      BridgeNativeModulePerfLogger::syncMethodCallReturnConversionStart(moduleName, methodName);
+    } else {
+      BridgeNativeModulePerfLogger::asyncMethodCallExecutionEnd(moduleName, methodName, (int32_t)callId);
+    }
+
+    return convertIdToFollyDynamic(result);
+  } @catch (NSException *exception) {
+    if (context == Sync) {
+      BridgeNativeModulePerfLogger::syncMethodCallFail(moduleName, methodName);
+    } else {
+      BridgeNativeModulePerfLogger::asyncMethodCallExecutionFail(moduleName, methodName, (int32_t)callId);
+    }
+
+    // Pass on JS exceptions
+    if ([exception.name hasPrefix:RCTFatalExceptionName]) {
+      @throw exception;
+    }
+
+#if RCT_DEBUG
+    NSString *message = [NSString
+        stringWithFormat:@"Exception '%@' was thrown while invoking %s on target %@ with params %@\ncallstack: %@",
+                         exception,
+                         method.JSMethodName,
+                         moduleData.name,
+                         objcParams,
+                         exception.callStackSymbols];
+    RCTFatal(RCTErrorWithMessage(message));
+#else
+    RCTFatalException(exception);
+#endif
+  }
+
+  return folly::none;
+}
 
 }
 }

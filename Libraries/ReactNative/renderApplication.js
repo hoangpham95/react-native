@@ -1,44 +1,61 @@
 /**
- * Copyright (c) 2015-present, Facebook, Inc.
- * All rights reserved.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  *
- * @providesModule renderApplication
+ * @format
  * @flow
  */
 
 'use strict';
 
-var AppContainer = require('AppContainer');
-var React = require('React');
-var ReactNative = require('ReactNative');
+const AppContainer = require('./AppContainer');
+import GlobalPerformanceLogger from '../Utilities/GlobalPerformanceLogger';
+import type {IPerformanceLogger} from '../Utilities/createPerformanceLogger';
+import PerformanceLoggerContext from '../Utilities/PerformanceLoggerContext';
+const React = require('react');
 
-var invariant = require('fbjs/lib/invariant');
+const invariant = require('invariant');
 
 // require BackHandler so it sets the default handler that exits the app if no listeners respond
-require('BackHandler');
+require('../Utilities/BackHandler');
 
 function renderApplication<Props: Object>(
-  RootComponent: ReactClass<Props>,
+  RootComponent: React.ComponentType<Props>,
   initialProps: Props,
-  rootTag: any
+  rootTag: any,
+  WrapperComponent?: ?React.ComponentType<*>,
+  fabric?: boolean,
+  showArchitectureIndicator?: boolean,
+  scopedPerformanceLogger?: IPerformanceLogger,
+  isLogBox?: boolean,
 ) {
-  invariant(
-    rootTag,
-    'Expect to have a valid rootTag, instead got ', rootTag
-  );
-  ReactNative.render(
-    <AppContainer rootTag={rootTag}>
-      <RootComponent
-        {...initialProps}
+  invariant(rootTag, 'Expect to have a valid rootTag, instead got ', rootTag);
+
+  const performanceLogger = scopedPerformanceLogger ?? GlobalPerformanceLogger;
+
+  const renderable = (
+    <PerformanceLoggerContext.Provider value={performanceLogger}>
+      <AppContainer
         rootTag={rootTag}
-      />
-    </AppContainer>,
-    rootTag
+        fabric={fabric}
+        showArchitectureIndicator={showArchitectureIndicator}
+        WrapperComponent={WrapperComponent}
+        initialProps={initialProps ?? Object.freeze({})}
+        internal_excludeLogBox={isLogBox}>
+        <RootComponent {...initialProps} rootTag={rootTag} />
+      </AppContainer>
+    </PerformanceLoggerContext.Provider>
   );
+
+  performanceLogger.startTimespan('renderApplication_React_render');
+  if (fabric) {
+    require('../Renderer/shims/ReactFabric').render(renderable, rootTag);
+  } else {
+    require('../Renderer/shims/ReactNative').render(renderable, rootTag);
+  }
+  performanceLogger.stopTimespan('renderApplication_React_render');
 }
 
 module.exports = renderApplication;

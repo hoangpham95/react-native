@@ -1,57 +1,90 @@
 /**
- * Copyright (c) 2015-present, Facebook, Inc.
- * All rights reserved.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  *
  * @flow
+ * @format
  */
 
 'use strict';
 
 const React = require('react');
-const SectionList = require('SectionList');
+const SectionList = require('../SectionList');
 
-function renderMyListItem(info: {item: {title: string}, index: number}) {
+function renderMyListItem(info: {
+  item: {title: string, ...},
+  index: number,
+  ...
+}) {
   return <span />;
 }
 
-const renderMyHeader = ({section}: {section: {fooNumber: number} & Object}) => <span />;
+const renderMyHeader = ({
+  section,
+}: {
+  section: {fooNumber: number, ...} & Object,
+  ...
+}) => <span />;
 
 module.exports = {
-  testGoodDataWithGoodItem() {
-    const sections = [{
-      key: 'a', data: [{
-        title: 'foo',
-        key: 1,
-      }],
-    }];
+  testGoodDataWithGoodItem(): React.Node {
+    const sections = [
+      {
+        key: 'a',
+        data: [
+          {
+            title: 'foo',
+            key: 1,
+          },
+        ],
+      },
+    ];
     return <SectionList renderItem={renderMyListItem} sections={sections} />;
   },
 
-  testBadRenderItemFunction() {
-    const sections = [{
-      key: 'a', data: [{
-        title: 'foo',
-        key: 1,
-      }],
-    }];
+  testBadRenderItemFunction(): $TEMPORARY$array<React.Node> {
+    const sections = [
+      {
+        key: 'a',
+        data: [
+          {
+            title: 'foo',
+            key: 1,
+          },
+        ],
+      },
+    ];
     return [
-      // $FlowExpectedError - title should be inside `item`
-      <SectionList renderItem={(info: {title: string}) => <span /> } sections={sections} />,
-      // $FlowExpectedError - bad index type string, should be number
-      <SectionList renderItem={(info: {index: string}) => <span /> } sections={sections} />,
+      <SectionList
+        // $FlowExpectedError - title should be inside `item`
+        renderItem={(info: {title: string, ...}) => <span />}
+        sections={sections}
+      />,
+      <SectionList
+        // $FlowExpectedError - bad index type string, should be number
+        renderItem={(info: {index: string}) => <span />}
+        sections={sections}
+      />,
       // EverythingIsFine
-      <SectionList renderItem={(info: {item: {title: string}}) => <span /> } sections={sections} />,
+      <SectionList
+        renderItem={(info: {item: {title: string, ...}, ...}) => <span />}
+        sections={sections}
+      />,
     ];
   },
 
   testBadInheritedDefaultProp(): React.Element<*> {
     const sections = [];
-    // $FlowExpectedError - bad windowSize type "big"
-    return <SectionList renderItem={renderMyListItem} sections={sections} windowSize="big" />;
+    return (
+      <SectionList
+        renderItem={renderMyListItem}
+        sections={sections}
+        // $FlowExpectedError - bad windowSize type "big"
+        windowSize="big"
+      />
+    );
   },
 
   testMissingData(): React.Element<*> {
@@ -60,28 +93,40 @@ module.exports = {
   },
 
   testBadSectionsShape(): React.Element<*> {
-    const sections = [{
-      key: 'a', items: [{
-        title: 'foo',
-        key: 1,
-      }],
-    }];
+    const sections = [
+      {
+        key: 'a',
+        items: [
+          {
+            title: 'foo',
+            key: 1,
+          },
+        ],
+      },
+    ];
     // $FlowExpectedError - section missing `data` field
     return <SectionList renderItem={renderMyListItem} sections={sections} />;
   },
 
   testBadSectionsMetadata(): React.Element<*> {
-    // $FlowExpectedError - section has bad meta data `fooNumber` field of type string
-    const sections = [{
-      key: 'a', fooNumber: 'string', data: [{
-        title: 'foo',
-        key: 1,
-      }],
-    }];
+    const sections = [
+      {
+        key: 'a',
+        fooNumber: 'string',
+        data: [
+          {
+            title: 'foo',
+            key: 1,
+          },
+        ],
+      },
+    ];
     return (
       <SectionList
         renderSectionHeader={renderMyHeader}
         renderItem={renderMyListItem}
+        /* $FlowExpectedError - section has bad meta data `fooNumber` field of
+         * type string */
         sections={sections}
       />
     );

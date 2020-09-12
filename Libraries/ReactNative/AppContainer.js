@@ -1,47 +1,56 @@
 /**
- * Copyright (c) 2015-present, Facebook, Inc.
- * All rights reserved.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
  *
- * @providesModule AppContainer
+ * @format
  * @flow
  */
 
 'use strict';
 
-const EmitterSubscription = require('EmitterSubscription');
-const RCTDeviceEventEmitter = require('RCTDeviceEventEmitter');
-const React = require('React');
-const ReactNative = require('ReactNative');
-const StyleSheet = require('StyleSheet');
-const View = require('View');
+import View from '../Components/View/View';
+import RCTDeviceEventEmitter from '../EventEmitter/RCTDeviceEventEmitter';
+import StyleSheet from '../StyleSheet/StyleSheet';
+import {type EventSubscription} from '../vendor/emitter/EventEmitter';
+import {RootTagContext, createRootTag} from './RootTag';
+import PropTypes from 'prop-types';
+import * as React from 'react';
 
-type Context = {
+type Context = {rootTag: number, ...};
+
+type Props = $ReadOnly<{|
+  children?: React.Node,
+  fabric?: boolean,
   rootTag: number,
-};
-type Props = {
-  children?: React.Children,
-  rootTag: number,
-};
-type State = {
-  inspector: ?React.Element<*>,
+  initialProps?: {...},
+  showArchitectureIndicator?: boolean,
+  WrapperComponent?: ?React.ComponentType<any>,
+  internal_excludeLogBox?: ?boolean,
+|}>;
+
+type State = {|
+  inspector: ?React.Node,
   mainKey: number,
-};
+  hasError: boolean,
+|};
 
-class AppContainer extends React.Component {
-  props: Props;
+class AppContainer extends React.Component<Props, State> {
   state: State = {
     inspector: null,
     mainKey: 1,
+    hasError: false,
   };
-  _mainRef: ?React.Element<*>;
-  _subscription: ?EmitterSubscription = null;
+  _mainRef: ?React.ElementRef<typeof View>;
+  _subscription: ?EventSubscription = null;
 
-  static childContextTypes = {
-    rootTag: React.PropTypes.number,
+  static getDerivedStateFromError: any = undefined;
+
+  static childContextTypes:
+    | any
+    | {|rootTag: React$PropType$Primitive<number>|} = {
+    rootTag: PropTypes.number,
   };
 
   getChildContext(): Context {
@@ -52,54 +61,82 @@ class AppContainer extends React.Component {
 
   componentDidMount(): void {
     if (__DEV__) {
-      this._subscription = RCTDeviceEventEmitter.addListener(
-        'toggleElementInspector',
-        () => {
-          const Inspector = require('Inspector');
-          const inspector = this.state.inspector
-            ? null
-            : <Inspector
-                inspectedViewTag={ReactNative.findNodeHandle(this._mainRef)}
-                onRequestRerenderApp={(updateInspectedViewTag) => {
+      if (!global.__RCTProfileIsProfiling) {
+        this._subscription = RCTDeviceEventEmitter.addListener(
+          'toggleElementInspector',
+          () => {
+            const Inspector = require('../Inspector/Inspector');
+            const inspector = this.state.inspector ? null : (
+              <Inspector
+                inspectedView={this._mainRef}
+                onRequestRerenderApp={updateInspectedView => {
                   this.setState(
-                    (s) => ({mainKey: s.mainKey + 1}),
-                    () => updateInspectedViewTag(
-                      ReactNative.findNodeHandle(this._mainRef)
-                    )
+                    s => ({mainKey: s.mainKey + 1}),
+                    () => updateInspectedView(this._mainRef),
                   );
                 }}
-              />;
-          this.setState({inspector});
-        },
-      );
+              />
+            );
+            this.setState({inspector});
+          },
+        );
+      }
     }
   }
 
   componentWillUnmount(): void {
-    if (this._subscription) {
+    if (this._subscription != null) {
       this._subscription.remove();
     }
   }
 
-  render(): React.Element<*> {
-    let yellowBox = null;
+  render(): React.Node {
+    let logBox = null;
     if (__DEV__) {
-      const YellowBox = require('YellowBox');
-      yellowBox = <YellowBox />;
+      if (
+        !global.__RCTProfileIsProfiling &&
+        !this.props.internal_excludeLogBox
+      ) {
+        const LogBoxNotificationContainer = require('../LogBox/LogBoxNotificationContainer')
+          .default;
+        logBox = <LogBoxNotificationContainer />;
+      }
     }
 
-    return (
-      <View style={styles.appContainer} pointerEvents="box-none">
-        <View
-          collapsable={!this.state.inspector}
-          key={this.state.mainKey}
-          pointerEvents="box-none"
-          style={styles.appContainer} ref={(ref) => {this._mainRef = ref;}}>
-          {this.props.children}
-        </View>
-        {yellowBox}
-        {this.state.inspector}
+    let innerView = (
+      <View
+        collapsable={!this.state.inspector}
+        key={this.state.mainKey}
+        pointerEvents="box-none"
+        style={styles.appContainer}
+        ref={ref => {
+          this._mainRef = ref;
+        }}>
+        {this.props.children}
       </View>
+    );
+
+    const Wrapper = this.props.WrapperComponent;
+    if (Wrapper != null) {
+      innerView = (
+        <Wrapper
+          initialProps={this.props.initialProps}
+          fabric={this.props.fabric === true}
+          showArchitectureIndicator={
+            this.props.showArchitectureIndicator === true
+          }>
+          {innerView}
+        </Wrapper>
+      );
+    }
+    return (
+      <RootTagContext.Provider value={createRootTag(this.props.rootTag)}>
+        <View style={styles.appContainer} pointerEvents="box-none">
+          {!this.state.hasError && innerView}
+          {this.state.inspector}
+          {logBox}
+        </View>
+      </RootTagContext.Provider>
     );
   }
 }
@@ -109,5 +146,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+if (__DEV__) {
+  if (!global.__RCTProfileIsProfiling) {
+    const LogBox = require('../LogBox/LogBox');
+    LogBox.install();
+  }
+}
 
 module.exports = AppContainer;

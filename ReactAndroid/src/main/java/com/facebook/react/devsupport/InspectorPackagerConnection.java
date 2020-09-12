@@ -1,30 +1,28 @@
-// Copyright 2004-present Facebook. All Rights Reserved.
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 package com.facebook.react.devsupport;
 
-import javax.annotation.Nullable;
-
+import android.os.AsyncTask;
+import android.os.Handler;
+import android.os.Looper;
+import androidx.annotation.Nullable;
+import com.facebook.common.logging.FLog;
+import com.facebook.react.bridge.Inspector;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-
-import android.os.Handler;
-import android.os.Looper;
-
-import com.facebook.common.logging.FLog;
-import com.facebook.react.bridge.Inspector;
-
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.RequestBody;
 import okhttp3.Response;
-import okhttp3.ResponseBody;
-import okhttp3.ws.WebSocket;
-import okhttp3.ws.WebSocketCall;
-import okhttp3.ws.WebSocketListener;
-import okio.Buffer;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -34,10 +32,15 @@ public class InspectorPackagerConnection {
 
   private final Connection mConnection;
   private final Map<String, Inspector.LocalConnection> mInspectorConnections;
+  private final String mPackageName;
+  private BundleStatusProvider mBundleStatusProvider;
 
-  public InspectorPackagerConnection(String url) {
+  public InspectorPackagerConnection(
+      String url, String packageName, BundleStatusProvider bundleStatusProvider) {
     mConnection = new Connection(url);
     mInspectorConnections = new HashMap<>();
+    mPackageName = packageName;
+    mBundleStatusProvider = bundleStatusProvider;
   }
 
   public void connect() {
@@ -48,17 +51,15 @@ public class InspectorPackagerConnection {
     mConnection.close();
   }
 
-  public void sendOpenEvent(String pageId) {
-    try {
-      JSONObject payload = makePageIdPayload(pageId);
-      sendEvent("open", payload);
-    } catch (JSONException | IOException e) {
-      FLog.e(TAG, "Failed to open page", e);
+  public void sendEventToAllConnections(String event) {
+    for (Map.Entry<String, Inspector.LocalConnection> inspectorConnectionEntry :
+        mInspectorConnections.entrySet()) {
+      Inspector.LocalConnection inspectorConnection = inspectorConnectionEntry.getValue();
+      inspectorConnection.sendMessage(event);
     }
   }
 
-  void handleProxyMessage(JSONObject message)
-      throws JSONException, IOException {
+  void handleProxyMessage(JSONObject message) throws JSONException, IOException {
     String event = message.getString("event");
     switch (event) {
       case "getPages":
@@ -85,7 +86,7 @@ public class InspectorPackagerConnection {
     mInspectorConnections.clear();
   }
 
-  private void handleConnect(JSONObject payload) throws JSONException, IOException {
+  private void handleConnect(JSONObject payload) throws JSONException {
     final String pageId = payload.getString("pageId");
     Inspector.LocalConnection inspectorConnection = mInspectorConnections.remove(pageId);
     if (inspectorConnection != null) {
@@ -94,26 +95,29 @@ public class InspectorPackagerConnection {
 
     try {
       // TODO: Use strings for id's too
-      inspectorConnection = Inspector.connect(Integer.parseInt(pageId), new Inspector.RemoteConnection() {
-        @Override
-        public void onMessage(String message) {
-          try {
-            sendWrappedEvent(pageId, message);
-          } catch (IOException | JSONException e) {
-            FLog.w(TAG, "Couldn't send event to packager", e);
-          }
-        }
+      inspectorConnection =
+          Inspector.connect(
+              Integer.parseInt(pageId),
+              new Inspector.RemoteConnection() {
+                @Override
+                public void onMessage(String message) {
+                  try {
+                    sendWrappedEvent(pageId, message);
+                  } catch (JSONException e) {
+                    FLog.w(TAG, "Couldn't send event to packager", e);
+                  }
+                }
 
-        @Override
-        public void onDisconnect() {
-          try {
-            mInspectorConnections.remove(pageId);
-            sendEvent("disconnect", makePageIdPayload(pageId));
-          } catch (IOException | JSONException e) {
-            FLog.w(TAG, "Couldn't send event to packager", e);
-          }
-        }
-      });
+                @Override
+                public void onDisconnect() {
+                  try {
+                    mInspectorConnections.remove(pageId);
+                    sendEvent("disconnect", makePageIdPayload(pageId));
+                  } catch (JSONException e) {
+                    FLog.w(TAG, "Couldn't send event to packager", e);
+                  }
+                }
+              });
       mInspectorConnections.put(pageId, inspectorConnection);
     } catch (Exception e) {
       FLog.w(TAG, "Failed to open page: " + pageId, e);
@@ -131,12 +135,14 @@ public class InspectorPackagerConnection {
     inspectorConnection.disconnect();
   }
 
-  private void handleWrappedEvent(JSONObject payload) throws JSONException, IOException {
+  private void handleWrappedEvent(JSONObject payload) throws JSONException {
     final String pageId = payload.getString("pageId");
     String wrappedEvent = payload.getString("wrappedEvent");
     Inspector.LocalConnection inspectorConnection = mInspectorConnections.get(pageId);
     if (inspectorConnection == null) {
-      throw new IllegalStateException("Not connected: " + pageId);
+      // This tends to happen during reloads, so don't panic.
+      FLog.w(TAG, "PageID " + pageId + " is disconnected. Dropping event: " + wrappedEvent);
+      return;
     }
     inspectorConnection.sendMessage(wrappedEvent);
   }
@@ -144,24 +150,28 @@ public class InspectorPackagerConnection {
   private JSONArray getPages() throws JSONException {
     List<Inspector.Page> pages = Inspector.getPages();
     JSONArray array = new JSONArray();
+    BundleStatus bundleStatus = mBundleStatusProvider.getBundleStatus();
     for (Inspector.Page page : pages) {
       JSONObject jsonPage = new JSONObject();
       jsonPage.put("id", String.valueOf(page.getId()));
       jsonPage.put("title", page.getTitle());
+      jsonPage.put("app", mPackageName);
+      jsonPage.put("vm", page.getVM());
+      jsonPage.put("isLastBundleDownloadSuccess", bundleStatus.isLastDownloadSucess);
+      jsonPage.put("bundleUpdateTimestamp", bundleStatus.updateTimestamp);
       array.put(jsonPage);
     }
     return array;
   }
 
-  private void sendWrappedEvent(String pageId, String message) throws IOException, JSONException {
+  private void sendWrappedEvent(String pageId, String message) throws JSONException {
     JSONObject payload = new JSONObject();
     payload.put("pageId", pageId);
     payload.put("wrappedEvent", message);
     sendEvent("wrappedEvent", payload);
   }
 
-  private void sendEvent(String name, Object payload)
-      throws JSONException, IOException {
+  private void sendEvent(String name, Object payload) throws JSONException {
     JSONObject jsonMessage = new JSONObject();
     jsonMessage.put("event", name);
     jsonMessage.put("payload", payload);
@@ -174,11 +184,12 @@ public class InspectorPackagerConnection {
     return payload;
   }
 
-  private class Connection implements WebSocketListener {
+  private class Connection extends WebSocketListener {
     private static final int RECONNECT_DELAY_MS = 2000;
 
     private final String mUrl;
 
+    private OkHttpClient mHttpClient;
     private @Nullable WebSocket mWebSocket;
     private final Handler mHandler;
     private boolean mClosed;
@@ -195,9 +206,9 @@ public class InspectorPackagerConnection {
     }
 
     @Override
-    public void onFailure(IOException e, Response response) {
+    public void onFailure(WebSocket webSocket, Throwable t, Response response) {
       if (mWebSocket != null) {
-        abort("Websocket exception", e);
+        abort("Websocket exception", t);
       }
       if (!mClosed) {
         reconnect();
@@ -205,22 +216,16 @@ public class InspectorPackagerConnection {
     }
 
     @Override
-    public void onMessage(ResponseBody message) throws IOException {
+    public void onMessage(WebSocket webSocket, String text) {
       try {
-        handleProxyMessage(new JSONObject(message.string()));
-      } catch (JSONException e) {
-        throw new IOException(e);
-      } finally {
-        message.close();
+        handleProxyMessage(new JSONObject(text));
+      } catch (Exception e) {
+        throw new RuntimeException(e);
       }
     }
 
     @Override
-    public void onPong(Buffer payload) {
-    }
-
-    @Override
-    public void onClose(int code, String reason) {
+    public void onClosed(WebSocket webSocket, int code, String reason) {
       mWebSocket = null;
       closeAllConnections();
       if (!mClosed) {
@@ -232,15 +237,17 @@ public class InspectorPackagerConnection {
       if (mClosed) {
         throw new IllegalStateException("Can't connect closed client");
       }
-      OkHttpClient httpClient = new OkHttpClient.Builder()
-          .connectTimeout(10, TimeUnit.SECONDS)
-          .writeTimeout(10, TimeUnit.SECONDS)
-          .readTimeout(0, TimeUnit.MINUTES) // Disable timeouts for read
-          .build();
+      if (mHttpClient == null) {
+        mHttpClient =
+            new OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .writeTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(0, TimeUnit.MINUTES) // Disable timeouts for read
+                .build();
+      }
 
       Request request = new Request.Builder().url(mUrl).build();
-      WebSocketCall call = WebSocketCall.create(httpClient, request);
-      call.enqueue(this);
+      mHttpClient.newWebSocket(request, this);
     }
 
     private void reconnect() {
@@ -269,19 +276,28 @@ public class InspectorPackagerConnection {
       if (mWebSocket != null) {
         try {
           mWebSocket.close(1000, "End of session");
-        } catch (IOException e) {
+        } catch (Exception e) {
           // swallow, no need to handle it here
         }
         mWebSocket = null;
       }
     }
 
-    public void send(JSONObject object) throws IOException {
-      if (mWebSocket == null) {
-        return;
-      }
-
-      mWebSocket.sendMessage(RequestBody.create(WebSocket.TEXT, object.toString()));
+    public void send(final JSONObject object) {
+      new AsyncTask<WebSocket, Void, Void>() {
+        @Override
+        protected Void doInBackground(WebSocket... sockets) {
+          if (sockets == null || sockets.length == 0) {
+            return null;
+          }
+          try {
+            sockets[0].send(object.toString());
+          } catch (Exception e) {
+            FLog.w(TAG, "Couldn't send event to packager", e);
+          }
+          return null;
+        }
+      }.execute(mWebSocket);
     }
 
     private void abort(String message, Throwable cause) {
@@ -294,11 +310,29 @@ public class InspectorPackagerConnection {
       if (mWebSocket != null) {
         try {
           mWebSocket.close(1000, "End of session");
-        } catch (IOException e) {
+        } catch (Exception e) {
           // swallow, no need to handle it here
         }
         mWebSocket = null;
       }
     }
+  }
+
+  public static class BundleStatus {
+    public Boolean isLastDownloadSucess;
+    public long updateTimestamp = -1;
+
+    public BundleStatus(Boolean isLastDownloadSucess, long updateTimestamp) {
+      this.isLastDownloadSucess = isLastDownloadSucess;
+      this.updateTimestamp = updateTimestamp;
+    }
+
+    public BundleStatus() {
+      this(false, -1);
+    }
+  }
+
+  public interface BundleStatusProvider {
+    public BundleStatus getBundleStatus();
   }
 }
